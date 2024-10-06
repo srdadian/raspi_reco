@@ -1,3 +1,6 @@
+requests
+psutil
 numpy
+opencv-python
 picamera
 face_recognition

@@ -7,7 +7,27 @@ from threading import Condition
 
 import cv2
 
+from fort_condorcet.cameras.RaspiCamera import RaspiCamera
+from fort_condorcet.cameras.WebcamCamera import WebcamCamera
+
 PAGE = open('public/page.html').read()
+
+
+def display_faces(face_locations, face_names, frame):
+    for (top, right, bottom, left), name in zip(face_locations, face_names):
+        # Scale back up face locations since the frame we detected in was scaled to 1/4 size
+        top *= 4
+        right *= 4
+        bottom *= 4
+        left *= 4
+
+        # Draw a box around the face
+        cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+
+        # Draw a label with a name below the face
+        cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
+        font = cv2.FONT_HERSHEY_DUPLEX
+        cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
 
 
 class StreamingOutput(object):
@@ -33,10 +53,13 @@ class StreamingServer(socketserver.ThreadingMixIn, server.HTTPServer):
     daemon_threads = True
 
 
-def http_server(image_q, host, port):
+def http_server(faces_q, host, port, raspi=False):
     print('Starting http server')
+    camera = RaspiCamera() if raspi else WebcamCamera(default_camera=1)
 
     class StreamingHandler(server.BaseHTTPRequestHandler):
+        face_locations, face_names = [], []
+
         def do_GET(self):
             if self.path == '/':
                 self.send_response(301)
@@ -59,11 +82,12 @@ def http_server(image_q, host, port):
                 try:
                     while True:
                         try:
-                            frame = image_q.get(False)  # Non-blocking read from the queue.
-                            # Convert to jpg
-                            _, jpeg_data = cv2.imencode('.jpg', frame)
+                            frame = camera.capture()
+                            if not faces_q.empty():
+                                self.face_locations, self.face_names = faces_q.get()
+                            display_faces(self.face_locations, self.face_names, frame)
+                            _, jpeg_data = cv2.imencode('.jpg', frame)  # Convert to jpg
                             jpeg_bytes = jpeg_data.tobytes()
-                            # print("Received frame: ", frame)
                             # with output.condition:
                             #     output.condition.wait()
                             #     frame = output.frame
