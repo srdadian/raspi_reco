@@ -29,18 +29,19 @@ def child_exited(sig, frame):
 
 
 def main_process():
-    img_q = Queue()
+    frame_q = Queue()
+    faces_q = Queue()
 
     signal.signal(signal.SIGCHLD, child_exited)
 
     # Face reco process
     face_recognition_p = Process(target=face_recognition_process,
-                                 args=(img_q, False,))
+                                 args=(frame_q, faces_q, False,))
     face_recognition_p.start()
 
     # http server
     http_server_p = Process(target=http_server,
-                            args=(img_q, 'localhost', 8000))
+                            args=(frame_q, faces_q, 'localhost', 8000))
     http_server_p.start()
 
     time.sleep(60)  # Just long enough for the feed server to do something.

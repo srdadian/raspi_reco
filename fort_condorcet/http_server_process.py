@@ -1,4 +1,5 @@
 import io
+import time
 import logging
 import socketserver
 from http import server
@@ -53,9 +54,9 @@ class StreamingServer(socketserver.ThreadingMixIn, server.HTTPServer):
     daemon_threads = True
 
 
-def http_server(faces_q, host, port, raspi=False):
+def http_server(frame_q, faces_q, host, port, raspi=False):
     print('Starting http server')
-    camera = RaspiCamera() if raspi else WebcamCamera(default_camera=1)
+    camera = RaspiCamera() if raspi else WebcamCamera(default_camera=0)
 
     class StreamingHandler(server.BaseHTTPRequestHandler):
         face_locations, face_names = [], []
@@ -80,17 +81,22 @@ def http_server(faces_q, host, port, raspi=False):
                 self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=FRAME')
                 self.end_headers()
                 try:
+
+                    delete_faces_timer = -1
                     while True:
                         try:
                             frame = camera.capture()
+                            if frame_q.empty():
+                                frame_q.put(frame)
+                            if time.time() - delete_faces_timer > 1.5 and delete_faces_timer != -1:
+                                self.face_locations, self.face_names = [], []
+                                delete_faces_timer = -1
                             if not faces_q.empty():
                                 self.face_locations, self.face_names = faces_q.get()
+                                delete_faces_timer = time.time()
                             display_faces(self.face_locations, self.face_names, frame)
                             _, jpeg_data = cv2.imencode('.jpg', frame)  # Convert to jpg
                             jpeg_bytes = jpeg_data.tobytes()
-                            # with output.condition:
-                            #     output.condition.wait()
-                            #     frame = output.frame
                             self.wfile.write(b'--FRAME\r\n')
                             self.send_header('Content-Type', 'image/jpeg')
                             self.send_header('Content-Length', len(jpeg_bytes))
@@ -98,7 +104,6 @@ def http_server(faces_q, host, port, raspi=False):
                             self.wfile.write(jpeg_bytes)
                             self.wfile.write(b'\r\n')
                         except Empty:
-                            # msg = None
                             pass
                 except Exception as e:
                     logging.warning(
