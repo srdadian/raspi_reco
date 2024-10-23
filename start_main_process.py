@@ -22,6 +22,18 @@ def child_exited(sig, frame):
         traceback.print_stack(frame)
         print('Received signal {} on line {} in {}'.format(
             str(sig), str(frame.f_lineno), frame.f_code.co_filename))
+
+        # Reap zombie processes
+        while True:
+            try:
+                # Use os.WNOHANG to make sure the call is non-blocking
+                pid, _ = os.waitpid(-1, os.WNOHANG)
+                if pid == 0:
+                    break  # No more zombies
+            except ChildProcessError:
+                break
+
+        # Terminate all remaining children
         for child in parent.children(recursive=False):
             print('Terminating child process {}'.format(child))
             child.terminate()
